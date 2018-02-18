@@ -7,14 +7,7 @@ var passwordHash = require('password-hash');
 var session = require('express-session')
 const ejsLint = require('ejs-lint'); //a tester
 
-var connection = mysql.createConnection({
-    host: '127.0.0.1',
-    user: 'root',
-    password: '',
-    port: '3306',
-    database: 'carcnam',
-    multipleStatements: true
-});
+//ajout connection base de données
 
 var app = express();
 //Store all HTML files in views folder.
