@@ -7,7 +7,13 @@ var passwordHash = require('password-hash');
 var session = require('express-session')
 const ejsLint = require('ejs-lint'); //a tester
 
-//ajout connection base de données
+
+// /sortir infos bdd dans fichier yaml par exemple
+var connection = mysql.createConnection({
+   
+    database: 'carcnam',
+    multipleStatements: true
+});
 
 var app = express();
 //Store all HTML files in views folder.
@@ -25,10 +31,12 @@ console.log(bodyParser);
 
 app.set('trust proxy', 1) // trust first proxy
 app.use(session({
-  secret: 'keyboard cat',
-  resave: false,
-  saveUninitialized: true,
-  cookie: { maxAge: 60000 }
+    secret: 'keyboard cat',
+    resave: false,
+    saveUninitialized: true,
+    cookie: {
+        maxAge: 60000
+    }
 }));
 
 //connection à la base de données
@@ -43,23 +51,40 @@ connection.connect(function (err) {
 var sess;
 //Affichage de l'accueil
 app.get('/', urlencodedParser, function (req, res, next) {
-var cat='SELECT * FROM `agence` ; SELECT * FROM `categorie`';
-    sess=req.session
-    if(sess.email){
-        connection.query(cat, function (error, AgCat, fields) {
-            
-    
-            res.render('accueil.ejs',{agence:AgCat[0],categorie:AgCat[1],name:sess.email});
-    
-          });
-    }else{
+    var cat = 'SELECT * FROM `agence` ; SELECT * FROM `categorie`';
+    sess = req.session
+
+    if (sess.email) {
         connection.query(cat, function (error, AgCat, fields) {
             if (error) throw error;
-    
-            res.render('accueil.ejs',{agence:AgCat[0],categorie:AgCat[1]});
-    })
-}   
-    
+
+            res.render('accueil.ejs', {
+                agence: AgCat[0],
+                categorie: AgCat[1],
+                nom: sess.email
+            });
+        });
+    } else if (sess.admin) {
+        connection.query(cat, function (error, AgCat, fields) {
+            if (error) throw error;
+
+            return res.render('accueil.ejs', {
+                agence: AgCat[0],
+                categorie: AgCat[1],
+                test: sess.admin
+            });
+        });
+    } else {
+        connection.query(cat, function (error, AgCat, fields) {
+            if (error) throw error;
+
+            res.render('accueil.ejs', {
+                agence: AgCat[0],
+                categorie: AgCat[1]
+            });
+        })
+    }
+
 });
 
 
@@ -119,73 +144,81 @@ app.get('/login', function (req, res) {
 });
 
 //recupere le login
-app.post('/log', urlencodedParser, function (req, res) {
+app.post('/log', urlencodedParser, function (req, res, len) {
 
     var name = req.body.NomUser
     var pwd = req.body.MdpUser
-    sess=req.session
+    sess = req.session
 
     console.log("post received: %s", name, pwd);
-    connection.query('SELECT * FROM clients', (err, client) => {
-        if (err) throw err;
-        
-        client.forEach((row) => {
-            if (row.NomCl === name && passwordHash.verify(pwd, row.MdpCl)) {
-                connection.query('SELECT * FROM `agence` ; SELECT * FROM `categorie`', function (error, fields) {
-                    if (error) throw error;
-                    sess.email=row.NomCl
-                    res.redirect('/');
-                });  
-            }else if(name === 'admin' && pwd=== 'admin'){
-                res.redirect('/admin');
-                // res.render('agence.ejs', {name: name});
-            }else{
-                if (error) throw error;
-                    res.redirect('/');
-            }
-        });
-        
-    });
+    connection.query('SELECT * FROM clients', (err, client, len) => {
+            if (err) throw err;
 
+            for (var i = 0; i < client.length ; i++){
+                if (client[i].NomCl === name && passwordHash.verify(pwd, client[i].MdpCl)) {
+                    sess.email = client[i].NomCl
+                     return res.redirect('/');
+                }else if (name === 'admin' && pwd === 'admin') {
+                    console.log(name)
+                    sess.admin = name
+                    return res.redirect('/');
+
+                }
+                console.log(client[i].NomCl)
+
+            }
+
+    });
 });
 
 // ********************  ADMIN ***************************
 
 //accès page admin
-app.get('/admin', function(req, res)  {
-    connection.query('SELECT * FROM `agence`', function (error, rows, fields) {
-        if (error) throw error;
-        res.render('admin/agence.ejs',{tasks:rows});
-      });
-   
+app.get('/admin', function (req, res) {
+    sess = req.session
+    if (sess.admin) {
+        connection.query('SELECT * FROM `agence`', function (error, rows, fields) {
+            if (error) throw error;
+            res.render('admin/agence.ejs', {
+                tasks: rows,
+                name: sess.admin
+            });
+        });
+    }
+
+
 });
 
 //accès page admin catégorie
-app.get('/admin/categorie', function(req, res)  {
+app.get('/admin/categorie', function (req, res) {
     connection.query('SELECT * FROM `categorie`', function (error, rows, fields) {
-        ejsLint('admin/Categorie.ejs'); //marche po  a approfondir
+
         if (error) throw error;
-        res.render('admin/Categorie.ejs',{tasks:rows});
-      });
+        res.render('admin/Categorie.ejs', {
+            tasks: rows
+        });
+    });
 
 });
 
 //accès page admin véhicule
-app.get('/admin/vehicule', function(req, res)  {
+app.get('/admin/vehicule', function (req, res) {
     connection.query('SELECT * FROM `vehicules`', function (error, rows, fields) {
         ejsLint('admin/Categorie.ejs'); //marche po  a approfondir
         if (error) throw error;
-        res.render('admin/Vehicule.ejs',{tasks:rows});
-      });
+        res.render('admin/Vehicule.ejs', {
+            tasks: rows
+        });
+    });
 
 });
 
 //Accès ajout d'une agence
 app.all('/admin/add', urlencodedParser, function (req, res) {
-   
+
     var errorMessages = [''];
     var error, issuccess;
-    var test=false;
+    var test = false;
     if (test) {
         error = issuccess = false;
         if (!name) {
@@ -232,12 +265,13 @@ app.all('/admin/add', urlencodedParser, function (req, res) {
             }, function (error, results, fields) {
                 if (error) throw error;
                 console.log(results.insertId);
-                
+
             });
         }
     }
-    res.render('admin/addAg.ejs', { errorMessage: errorMessages }
-    );
+    res.render('admin/addAg.ejs', {
+        errorMessage: errorMessages
+    });
     next();
 });
 
